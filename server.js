@@ -10,9 +10,9 @@ const PORT = process.env.PORT || 3457;
 const DEFAULT_OWNER = process.env.GITHUB_OWNER || '';
 const DEFAULT_REPO = process.env.GITHUB_REPO || '';
 
-// Load credentials from ~/.env
+// Load credentials from local .env
 function loadEnv() {
-    const envPath = path.join(process.env.HOME, '.env');
+    const envPath = path.join(__dirname, '.env');
     if (!fs.existsSync(envPath)) return;
     const lines = fs.readFileSync(envPath, 'utf8').split('\n');
     for (const line of lines) {
@@ -28,7 +28,7 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_API = 'https://api.github.com';
 
 if (!GITHUB_TOKEN) {
-    console.error('Missing GITHUB_TOKEN in ~/.env');
+    console.error('Missing GITHUB_TOKEN in .env');
     process.exit(1);
 }
 
