@@ -1,0 +1,12 @@
+{
+  "name": "github-server",
+  "version": "1.0.0",
+  "description": "GitHub proxy server — lets AI agents interact with GitHub without accessing credentials",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}
