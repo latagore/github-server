@@ -38,11 +38,13 @@ Credentials are loaded from `~/.env` (`GITHUB_TOKEN`). Optional defaults: `GITHU
 - `POST /repos/:owner/:repo/pulls` — Create PR
 - `PATCH /repos/:owner/:repo/pulls/:number` — Update PR
 - `GET /repos/:owner/:repo/pulls/:number/files` — List PR changed files
+- `PUT /repos/:owner/:repo/pulls/:number/merge` — Merge PR
 
 ### PR Reviews
 
-- `GET /repos/:owner/:repo/pulls/:number/reviews` — List reviews
+- `GET /repos/:owner/:repo/pulls/:number/reviews` — List reviews + inline code comments
 - `POST /repos/:owner/:repo/pulls/:number/reviews` — Submit review
+- `POST /repos/:owner/:repo/pulls/:number/comments/:comment_id/replies` — Reply to an inline review comment
 
 ### CI Status
 
@@ -89,6 +91,11 @@ curl -X POST http://127.0.0.1:3457/repos/octocat/hello-world/pulls \
   -H 'Content-Type: application/json' \
   -d '{"title":"Add feature X","head":"feature-x","base":"main","body":"Implements feature X"}'
 
+# Merge PR (merge_method: merge, squash, or rebase)
+curl -X PUT http://127.0.0.1:3457/repos/octocat/hello-world/pulls/99/merge \
+  -H 'Content-Type: application/json' \
+  -d '{"merge_method":"squash","commit_title":"feat: add feature X (#99)"}'
+
 # Get PR files
 curl http://127.0.0.1:3457/repos/octocat/hello-world/pulls/99/files
 
@@ -96,6 +103,11 @@ curl http://127.0.0.1:3457/repos/octocat/hello-world/pulls/99/files
 curl -X POST http://127.0.0.1:3457/repos/octocat/hello-world/pulls/99/reviews \
   -H 'Content-Type: application/json' \
   -d '{"event":"APPROVE","body":"Looks good!"}'
+
+# Reply to an inline review comment (comment_id from GET .../reviews -> comments[].id)
+curl -X POST http://127.0.0.1:3457/repos/octocat/hello-world/pulls/99/comments/12345/replies \
+  -H 'Content-Type: application/json' \
+  -d '{"body":"Thanks — fixed in abc1234"}'
 
 # Check CI status
 curl http://127.0.0.1:3457/repos/octocat/hello-world/commits/abc123/check-runs
