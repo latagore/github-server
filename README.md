@@ -55,6 +55,10 @@ Credentials are loaded from `~/.env` (`GITHUB_TOKEN`). Optional defaults: `GITHU
 
 - `GET /search/issues?q=...` — Search issues and PRs
 
+### Clone
+
+- `POST /clone` — Clone a repo to a local absolute path using the proxy's token
+
 ### Health
 
 - `GET /health` — Health check
@@ -114,6 +118,11 @@ curl http://127.0.0.1:3457/repos/octocat/hello-world/commits/abc123/check-runs
 
 # Search
 curl 'http://127.0.0.1:3457/search/issues?q=repo:octocat/hello-world+is:open+label:bug'
+
+# Clone a repo (dest must be an absolute path and must not already exist)
+curl -X POST http://127.0.0.1:3457/clone \
+  -H 'Content-Type: application/json' \
+  -d '{"owner":"octocat","repo":"hello-world","dest":"/tmp/hello-world","branch":"main","depth":1}'
 ```
 
 ## Create Issue Fields
