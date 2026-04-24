@@ -915,10 +915,11 @@ app.post('/clone', (req, res) => {
         }
 
         const url = `https://github.com/${owner}/${repo}.git`;
+        // Git smart-HTTP uses Basic auth, not Bearer. Inject via http.extraheader
+        // so the token is not in argv and is not written to the repo's .git/config.
+        const basic = Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64');
         const args = [
-            // Embed the auth header via git config so the token is not in argv
-            // and is not written to the repo's .git/config.
-            '-c', `http.https://github.com/.extraheader=Authorization: Bearer ${GITHUB_TOKEN}`,
+            '-c', `http.https://github.com/.extraheader=Authorization: Basic ${basic}`,
             'clone',
         ];
         if (branch) args.push('--branch', branch);
