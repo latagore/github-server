@@ -475,6 +475,41 @@ app.patch('/repos/:owner/:repo/pulls/:number', async (req, res) => {
     }
 });
 
+// PUT /repos/:owner/:repo/pulls/:number/merge — Merge PR
+app.put('/repos/:owner/:repo/pulls/:number/merge', async (req, res) => {
+    try {
+        const { owner, repo, error } = resolveRepo(req);
+        if (error) return res.status(400).json({ error });
+
+        const { number } = req.params;
+        const { commit_title, commit_message, merge_method = 'merge', sha } = req.body;
+        const payload = { merge_method };
+        if (commit_title) payload.commit_title = commit_title;
+        if (commit_message) payload.commit_message = commit_message;
+        if (sha) payload.sha = sha;
+
+        const ghRes = await githubFetch(`/repos/${owner}/${repo}/pulls/${number}/merge`, {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+        });
+
+        if (!ghRes.ok) {
+            const detail = await ghRes.text();
+            return res.status(ghRes.status).json({ error: `Failed to merge PR #${number}`, detail });
+        }
+
+        const data = await ghRes.json();
+        res.json({
+            merged: data.merged,
+            message: data.message,
+            sha: data.sha,
+        });
+    } catch (err) {
+        console.error(`PUT /pulls/${req.params.number}/merge error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /repos/:owner/:repo/pulls/:number/files — List PR files
 app.get('/repos/:owner/:repo/pulls/:number/files', async (req, res) => {
     try {
@@ -512,21 +547,35 @@ app.get('/repos/:owner/:repo/pulls/:number/files', async (req, res) => {
 // PR REVIEWS
 // ---------------------------------------------------------------------------
 
-// GET /repos/:owner/:repo/pulls/:number/reviews — List reviews
+// GET /repos/:owner/:repo/pulls/:number/reviews — List reviews + inline comments
 app.get('/repos/:owner/:repo/pulls/:number/reviews', async (req, res) => {
     try {
         const { owner, repo, error } = resolveRepo(req);
         if (error) return res.status(400).json({ error });
 
         const { number } = req.params;
-        const ghRes = await githubFetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`);
-        if (!ghRes.ok) {
-            const detail = await ghRes.text();
-            return res.status(ghRes.status).json({ error: `Failed to get reviews for PR #${number}`, detail });
+
+        // Fetch reviews and inline comments in parallel
+        const [reviewsRes, commentsRes] = await Promise.all([
+            githubFetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`),
+            githubFetch(`/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`),
+        ]);
+
+        if (!reviewsRes.ok) {
+            const detail = await reviewsRes.text();
+            return res.status(reviewsRes.status).json({ error: `Failed to get reviews for PR #${number}`, detail });
+        }
+        if (!commentsRes.ok) {
+            const detail = await commentsRes.text();
+            return res.status(commentsRes.status).json({ error: `Failed to get review comments for PR #${number}`, detail });
         }
 
-        const data = await ghRes.json();
-        const reviews = data.map(r => ({
+        const [reviewsData, commentsData] = await Promise.all([
+            reviewsRes.json(),
+            commentsRes.json(),
+        ]);
+
+        const reviews = reviewsData.map(r => ({
             id: r.id,
             user: r.user?.login,
             state: r.state,
@@ -534,9 +583,58 @@ app.get('/repos/:owner/:repo/pulls/:number/reviews', async (req, res) => {
             submitted_at: r.submitted_at,
         }));
 
-        res.json({ total: reviews.length, reviews });
+        const comments = commentsData.map(c => ({
+            id: c.id,
+            body: c.body,
+            user: c.user?.login,
+            path: c.path,
+            line: c.line,
+            side: c.side,
+            start_line: c.start_line,
+            in_reply_to_id: c.in_reply_to_id,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+        }));
+
+        res.json({ reviews, comments });
     } catch (err) {
         console.error(`GET /pulls/${req.params.number}/reviews error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /repos/:owner/:repo/pulls/:number/comments/:comment_id/replies — Reply to an inline review comment
+app.post('/repos/:owner/:repo/pulls/:number/comments/:comment_id/replies', async (req, res) => {
+    try {
+        const { owner, repo, error } = resolveRepo(req);
+        if (error) return res.status(400).json({ error });
+
+        const { number, comment_id } = req.params;
+        const { body } = req.body;
+        if (!body) return res.status(400).json({ error: 'body is required' });
+
+        const ghRes = await githubFetch(`/repos/${owner}/${repo}/pulls/${number}/comments/${comment_id}/replies`, {
+            method: 'POST',
+            body: JSON.stringify({ body }),
+        });
+
+        if (ghRes.status !== 201) {
+            const detail = await ghRes.text();
+            return res.status(ghRes.status).json({ error: `Failed to reply to comment ${comment_id} on PR #${number}`, detail });
+        }
+
+        const data = await ghRes.json();
+        res.status(201).json({
+            id: data.id,
+            body: data.body,
+            user: data.user?.login,
+            path: data.path,
+            line: data.line,
+            in_reply_to_id: data.in_reply_to_id,
+            created_at: data.created_at,
+        });
+    } catch (err) {
+        console.error(`POST /pulls/${req.params.number}/comments/${req.params.comment_id}/replies error:`, err);
         res.status(500).json({ error: err.message });
     }
 });
