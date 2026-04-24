@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 
 // ---------------------------------------------------------------------------
 // Config
@@ -886,6 +887,62 @@ app.get('/repos/:owner/:repo/commits/:ref/check-runs', async (req, res) => {
         res.json({ total_count: data.total_count, check_runs });
     } catch (err) {
         console.error(`GET /commits/${req.params.ref}/check-runs error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// CLONE
+// ---------------------------------------------------------------------------
+
+// POST /clone — Clone a repo to a local destination using the proxy's token
+// Body: { owner, repo, dest, branch?, depth? }
+// dest must be an absolute path and must not already exist.
+app.post('/clone', (req, res) => {
+    try {
+        const { owner, repo, dest, branch, depth } = req.body;
+        if (!owner || !repo || !dest) {
+            return res.status(400).json({ error: 'owner, repo, and dest are required' });
+        }
+        if (!path.isAbsolute(dest)) {
+            return res.status(400).json({ error: 'dest must be an absolute path' });
+        }
+        if (fs.existsSync(dest)) {
+            return res.status(409).json({ error: `dest already exists: ${dest}` });
+        }
+        if (depth !== undefined && (!Number.isInteger(depth) || depth < 1)) {
+            return res.status(400).json({ error: 'depth must be a positive integer' });
+        }
+
+        const url = `https://github.com/${owner}/${repo}.git`;
+        // Git smart-HTTP uses Basic auth, not Bearer. Inject via http.extraheader
+        // so the token is not in argv and is not written to the repo's .git/config.
+        const basic = Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64');
+        const args = [
+            '-c', `http.https://github.com/.extraheader=Authorization: Basic ${basic}`,
+            'clone',
+        ];
+        if (branch) args.push('--branch', branch);
+        if (depth) args.push('--depth', String(depth));
+        args.push('--', url, dest);
+
+        const child = spawn('git', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderr = '';
+        const redact = s => s.split(GITHUB_TOKEN).join('***');
+        child.stderr.on('data', d => { stderr += redact(d.toString()); });
+        child.stdout.on('data', () => { /* progress is on stderr; drop stdout */ });
+        child.on('error', err => {
+            res.status(500).json({ error: `failed to spawn git: ${err.message}` });
+        });
+        child.on('close', code => {
+            if (code === 0) {
+                res.status(201).json({ owner, repo, dest, branch: branch || null });
+            } else {
+                res.status(500).json({ error: 'git clone failed', code, stderr });
+            }
+        });
+    } catch (err) {
+        console.error('POST /clone error:', err);
         res.status(500).json({ error: err.message });
     }
 });
